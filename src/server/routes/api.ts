@@ -1,93 +1,112 @@
-import { Hono } from 'hono';
-import { context, redis, reddit } from '@devvit/web/server';
-import type {
-  DecrementResponse,
-  IncrementResponse,
-  InitResponse,
-} from '../../shared/api';
+import { Hono } from "hono";
+import { context } from "@devvit/web/server";
+import type { InitResponse } from "../../shared/api";
+import { GameEngine } from "../game/engine/GameEngine";
 
 type ErrorResponse = {
-  status: 'error';
+  status: "error";
   message: string;
 };
 
 export const api = new Hono();
 
-api.get('/init', async (c) => {
-  const { postId } = context;
+const engine = GameEngine.get();
 
-  if (!postId) {
-    console.error('API Init Error: postId not found in devvit context');
+/**
+ * INIT
+ * Called when client loads the game
+ * Returns player + world snapshot
+ */
+api.get("/init", async (c) => {
+  const { postId, userId } = context;
+
+  if (!postId || !userId) {
     return c.json<ErrorResponse>(
       {
-        status: 'error',
-        message: 'postId is required but missing from context',
+        status: "error",
+        message: "Missing postId or userId from context",
       },
       400
     );
   }
 
   try {
-    const [count, username] = await Promise.all([
-      redis.get('count'),
-      reddit.getCurrentUsername(),
+    const [profile, stats, inventory, world] = await Promise.all([
+      engine.getPlayerProfile(userId),
+      engine.getPlayerStats(userId),
+      engine.getInventory(userId),
+      engine.getWorldState(),
     ]);
 
-    return c.json<InitResponse>({
-      type: 'init',
-      postId: postId,
-      count: count ? parseInt(count) : 0,
-      username: username ?? 'anonymous',
-    });
-  } catch (error) {
-    console.error(`API Init Error for post ${postId}:`, error);
-    let errorMessage = 'Unknown error during initialization';
-    if (error instanceof Error) {
-      errorMessage = `Initialization failed: ${error.message}`;
+    // Create new player if none exists
+    if (!profile) {
+      await engine.setPlayerProfile(userId, {
+        userId,
+        createdAt: Date.now(),
+        name: `Wanderer-${userId.slice(0, 5)}`,
+      });
     }
+
+    const response: InitResponse = {
+      type: "init",
+      postId,
+      username: userId,
+      profile: profile ?? {
+        userId,
+        createdAt: Date.now(),
+        name: `Wanderer-${userId.slice(0, 5)}`,
+      },
+      stats,
+      inventory,
+      world,
+    } as any;
+
+    return c.json(response);
+  } catch (err) {
+    console.error("Init error:", err);
+
     return c.json<ErrorResponse>(
-      { status: 'error', message: errorMessage },
-      400
+      {
+        status: "error",
+        message: err instanceof Error ? err.message : "Unknown error",
+      },
+      500
     );
   }
 });
 
-api.post('/increment', async (c) => {
-  const { postId } = context;
-  if (!postId) {
+/**
+ * XP TEST ENDPOINT
+ * temporary until client UI is built
+ */
+api.post("/xp/add", async (c) => {
+  const { userId } = context;
+
+  if (!userId) {
     return c.json<ErrorResponse>(
-      {
-        status: 'error',
-        message: 'postId is required',
-      },
+      { status: "error", message: "Missing userId" },
       400
     );
   }
 
-  const count = await redis.incrBy('count', 1);
-  return c.json<IncrementResponse>({
-    count,
-    postId,
-    type: 'increment',
+  const body = await c.req.json<{ amount: number }>();
+
+  const stats = await engine.addXP(userId, body.amount);
+
+  return c.json({
+    type: "xp_update",
+    stats,
   });
 });
 
-api.post('/decrement', async (c) => {
-  const { postId } = context;
-  if (!postId) {
-    return c.json<ErrorResponse>(
-      {
-        status: 'error',
-        message: 'postId is required',
-      },
-      400
-    );
-  }
+/**
+ * WORLD STATE
+ */
+api.get("/world", async (c) => {
+  const world = await engine.getWorldState();
 
-  const count = await redis.incrBy('count', -1);
-  return c.json<DecrementResponse>({
-    count,
-    postId,
-    type: 'decrement',
+  return c.json({
+    type: "world",
+    world,
   });
 });
