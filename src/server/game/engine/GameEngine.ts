@@ -1,5 +1,5 @@
 import { redis, context } from "@devvit/web/server";
-
+import { StorageManager } from "../../core/StorageManager";
 /**
  * Stankville GameEngine (v2)
  *
@@ -48,18 +48,20 @@ export class GameEngine {
   // Profile
   // -------------------------
 
-  public async getPlayerProfile(userId: string) {
-    const data = await redis.get(this.playerKey(userId, "profile"));
-    return data ? JSON.parse(data) : null;
-  }
+public async getPlayerProfile(userId: string) {
+  return await StorageManager.getPlayerProfile(userId);
+}
 
-  public async setPlayerProfile(userId: string, profile: any) {
-    await redis.set(
-      this.playerKey(userId, "profile"),
-      JSON.stringify(profile)
-    );
-  }
 
+public async setPlayerProfile(
+  userId: string,
+  profile: any
+) {
+  await StorageManager.setPlayerProfile(
+    userId,
+    profile
+  );
+}
   // -------------------------
   // Stats
   // -------------------------

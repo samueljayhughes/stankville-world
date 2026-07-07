@@ -2,65 +2,76 @@ import { redis } from "@devvit/redis";
 
 export class StorageManager {
 
-  private static playerKey(id: string) {
-    return `player:${id}`;
+  private static playerKey(
+    userId: string,
+    namespace: string
+  ): string {
+    return `player:${userId}:${namespace}`;
   }
 
-static async getPlayerProfile(
-  userId: string
-) {
-  const data = await redis.get(
-    `player:${userId}:profile`
-  );
 
-  return data
-    ? JSON.parse(data)
-    : null;
-}
+  static async getPlayerProfile(userId: string) {
+    const data = await redis.get(
+      this.playerKey(userId, "profile")
+    );
+
+    return data ? JSON.parse(data) : null;
+  }
 
 
-static async setPlayerProfile(
-  userId:string,
-  profile:any
-) {
-  await redis.set(
-    `player:${userId}:profile`,
-    JSON.stringify(profile)
-  );
-}
-
-  static async savePlayer(
-    id: string,
-    player: unknown
+  static async setPlayerProfile(
+    userId: string,
+    profile: unknown
   ) {
     await redis.set(
-      this.playerKey(id),
-      JSON.stringify(player)
+      this.playerKey(userId, "profile"),
+      JSON.stringify(profile)
     );
   }
 
 
-  static async getPlayer<T>(
-    id: string
-  ): Promise<T | null> {
-
+  static async getPlayerStats(userId: string) {
     const data = await redis.get(
-      this.playerKey(id)
+      this.playerKey(userId, "stats")
     );
 
-    if (!data) {
-      return null;
-    }
-
-    return JSON.parse(data) as T;
+    return data
+      ? JSON.parse(data)
+      : {
+          xp: 0,
+          level: 1,
+          reputation: 0,
+        };
   }
 
 
-  static async deletePlayer(
-    id:string
+  static async setPlayerStats(
+    userId: string,
+    stats: unknown
   ) {
-    await redis.del(
-      this.playerKey(id)
+    await redis.set(
+      this.playerKey(userId, "stats"),
+      JSON.stringify(stats)
+    );
+  }
+
+
+  static async getInventory(userId: string) {
+    const data = await redis.get(
+      this.playerKey(userId, "inventory")
+    );
+
+    return data ? JSON.parse(data) : [];
+  }
+
+
+  static async setInventory(
+    userId: string,
+    inventory: unknown[]
+  ) {
+    await redis.set(
+      this.playerKey(userId, "inventory"),
+      JSON.stringify(inventory)
     );
   }
 }
