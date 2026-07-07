@@ -1,4 +1,5 @@
 import { redis } from "@devvit/redis";
+import { Inventory } from "../models/Inventory";
 
 export class StorageManager {
 
@@ -12,11 +13,34 @@ export class StorageManager {
 
   static async setInventory(
     userId: string,
-    inventory: unknown[]
-  ) {
+    inventory: Inventory
+  ): Promise<void> {
+
     await redis.set(
       this.playerKey(userId, "inventory"),
       JSON.stringify(inventory)
     );
   }
+
+
+  static async getInventory(
+    userId: string
+  ): Promise<Inventory> {
+
+    const data = await redis.get(
+      this.playerKey(userId, "inventory")
+    );
+
+
+    if (!data) {
+      return {
+        capacity: 20,
+        items: [],
+      };
+    }
+
+
+    return JSON.parse(data) as Inventory;
+  }
+
 }
