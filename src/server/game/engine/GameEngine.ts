@@ -67,24 +67,20 @@ public async setPlayerProfile(
   // -------------------------
 
   public async getPlayerStats(userId: string) {
-    const data = await redis.get(this.playerKey(userId, "stats"));
-
-    return data
-      ? JSON.parse(data)
-      : {
-          xp: 0,
-          level: 1,
-          reputation: 0,
-        };
+    return await StorageManager.getPlayerStats(userId);
   }
 
-  public async setPlayerStats(userId: string, stats: any) {
-    await redis.set(
-      this.playerKey(userId, "stats"),
-      JSON.stringify(stats)
+
+  public async setPlayerStats(
+    userId: string,
+    stats: any
+  ) {
+    await StorageManager.setPlayerStats(
+      userId,
+      stats
     );
-  }
-
+  } 
+ 
   public async addXP(userId: string, amount: number) {
     const stats = await this.getPlayerStats(userId);
 
