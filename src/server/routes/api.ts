@@ -110,3 +110,43 @@ api.get("/world", async (c) => {
     world,
   });
 });
+
+/**
+ * EXPLORE
+ * Player explores Stankville
+ */
+api.post("/explore", async (c) => {
+  const { userId } = context;
+
+  if (!userId) {
+    return c.json<ErrorResponse>(
+      {
+        status: "error",
+        message: "Missing userId",
+      },
+      400
+    );
+  }
+
+  try {
+    const encounter = engine.explore();
+
+    return c.json({
+      type: "exploration",
+      encounter,
+    });
+
+  } catch (err) {
+    console.error("Explore error:", err);
+
+    return c.json<ErrorResponse>(
+      {
+        status: "error",
+        message: err instanceof Error
+          ? err.message
+          : "Unknown error",
+      },
+      500
+    );
+  }
+});
