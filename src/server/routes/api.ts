@@ -377,36 +377,41 @@ api.post("/combat/attack", async(c)=>{
 
 
 
-    if(playerResult.defeated){
+if(playerResult.defeated){
 
-      const stats =
-        await engine.addXP(
-          userId,
-          session.enemy.xpReward
-        );
-
-
-      await StorageManager.deleteCombatSession(
-        session.id
-      );
+  const stats =
+    await engine.addXP(
+      userId,
+      session.enemy.xpReward
+    );
 
 
-      return c.json({
+  const loot =
+    await engine.generateLoot(
+      session.enemy.id
+    );
 
-        type:"combat_victory",
 
-        damage:playerDamage,
+  await StorageManager.deleteCombatSession(
+    session.id
+  );
 
-        xp:session.enemy.xpReward,
 
-        loot:session.enemy.lootTable,
+  return c.json({
 
-        stats,
+    type:"combat_victory",
 
-      });
+    damage:playerDamage,
 
-    }
+    xp:session.enemy.xpReward,
 
+    loot,
+
+    stats,
+
+  });
+
+}
 
 
     const enemyResult =
