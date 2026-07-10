@@ -1,23 +1,13 @@
-import { EnemyRegistry } from "../data/EnemyRegistry";
 import { Enemy } from "../../models/Enemy";
+import { EnemyFactory } from "../services/EnemyFactory";
 
 
 export class EnemySystem {
 
   static create(enemyId: string): Enemy {
 
-    const template = EnemyRegistry[enemyId];
+    return EnemyFactory.create(enemyId);
 
-    if (!template) {
-      throw new Error(
-        `Unknown enemy: ${enemyId}`
-      );
-    }
-
-    return {
-      ...template,
-      currentHealth: template.health,
-    };
   }
 
 }
