@@ -5,6 +5,7 @@ import { LootSystem } from "../systems/LootSystem";
 import { NPCSystem } from "../systems/NPCSystem";
 import { QuestSystem } from "../systems/QuestSystem";
 import { EquipmentSystem } from "../systems/EquipmentSystem";
+import { ExplorationSystem } from "../systems/ExplorationSystem";
 /**
  * Stankville GameEngine (v2)
  *
@@ -184,6 +185,10 @@ public async setPlayerProfile(
 // -------------------------
 // Gameplay Systems
 // -------------------------
+
+public explore() {
+  return ExplorationSystem.explore();
+}
 
 public async attackEnemy(enemy: any, playerAttack: number) {
   return CombatSystem.playerAttack(enemy, playerAttack);
