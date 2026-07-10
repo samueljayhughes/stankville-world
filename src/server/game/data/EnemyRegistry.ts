@@ -1,9 +1,17 @@
 import { Enemy } from "../../models/Enemy";
 
 
+const createEnemy = (
+  enemy: Omit<Enemy, "currentHealth">
+): Enemy => ({
+  ...enemy,
+  currentHealth: enemy.health,
+});
+
+
 export const EnemyRegistry: Record<string, Enemy> = {
 
-  sewer_rat: {
+  sewer_rat: createEnemy({
     id: "sewer_rat",
     name: "Sewer Rat",
 
@@ -15,11 +23,11 @@ export const EnemyRegistry: Record<string, Enemy> = {
 
     xpReward: 10,
 
-    lootTable: "rat_loot"
-  },
+    lootTable: "rat_loot",
+  }),
 
 
-  trash_goblin: {
+  trash_goblin: createEnemy({
     id: "trash_goblin",
     name: "Trash Goblin",
 
@@ -31,7 +39,7 @@ export const EnemyRegistry: Record<string, Enemy> = {
 
     xpReward: 25,
 
-    lootTable: "goblin_loot"
-  }
+    lootTable: "goblin_loot",
+  }),
 
 };

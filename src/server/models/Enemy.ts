@@ -4,6 +4,8 @@ export interface Enemy {
   level: number;
 
   health: number;
+  currentHealth: number;
+
   attack: number;
   defense: number;
 
