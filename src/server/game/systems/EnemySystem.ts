@@ -4,7 +4,7 @@ import { Enemy } from "../../models/Enemy";
 
 export class EnemySystem {
 
-  static create(enemyId:string): Enemy {
+  static create(enemyId: string): Enemy {
 
     const template = EnemyRegistry[enemyId];
 
