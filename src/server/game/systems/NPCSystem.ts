@@ -6,37 +6,46 @@ export class NPCSystem {
    * Find an NPC by ID.
    */
   static getNPC(id: string): NPC | undefined {
-    return NPCRegistry.get(id);
+    return NPCRegistry[id];
   }
 
   /**
    * Get dialogue for an NPC.
+   * Dialogue is not implemented yet.
    */
   static getDialogue(id: string): string[] {
-    const npc = NPCRegistry.get(id);
+    const npc = NPCRegistry[id];
 
     if (!npc) {
       return [];
     }
 
-    return npc.dialogue;
+    return [
+      npc.description,
+    ];
   }
 
   /**
    * Determine if an NPC can offer a quest.
+   * Quest linking is not implemented yet.
    */
   static hasQuest(id: string): boolean {
-    const npc = NPCRegistry.get(id);
+    const npc = NPCRegistry[id];
 
-    return !!npc?.questId;
+    return npc?.type === "quest";
   }
 
   /**
    * Get the quest offered by an NPC.
+   * Quest linking is not implemented yet.
    */
   static getQuest(id: string): string | null {
-    const npc = NPCRegistry.get(id);
+    const npc = NPCRegistry[id];
 
-    return npc?.questId ?? null;
+    if (npc?.type !== "quest") {
+      return null;
+    }
+
+    return null;
   }
 }

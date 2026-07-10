@@ -6,14 +6,14 @@ export class QuestSystem {
    * Look up a quest by ID.
    */
   static getQuest(id: string): Quest | undefined {
-    return QuestRegistry.get(id);
+    return QuestRegistry[id];
   }
 
   /**
    * Check whether a quest exists.
    */
   static exists(id: string): boolean {
-    return QuestRegistry.get(id) !== undefined;
+    return QuestRegistry[id] !== undefined;
   }
 
   /**

@@ -5,7 +5,7 @@ export class LootSystem {
    * Generate loot for a defeated enemy.
    */
   static generate(enemyId: string): string[] {
-    const table = LootRegistry.get(enemyId);
+    const table = LootRegistry[enemyId];
 
     if (!table) {
       return [];
