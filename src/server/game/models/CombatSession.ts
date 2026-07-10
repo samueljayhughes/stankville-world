@@ -1,6 +1,5 @@
 import { Enemy } from "../../models/Enemy";
 
-
 export interface CombatSession {
 
   id: string;
@@ -8,6 +7,8 @@ export interface CombatSession {
   playerId: string;
 
   enemy: Enemy;
+
+  playerHealth: number;
 
   turn: number;
 
