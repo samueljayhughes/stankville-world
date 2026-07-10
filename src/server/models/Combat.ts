@@ -1,10 +1,9 @@
 export interface CombatResult {
-  victory: boolean;
+  success: boolean;
 
-  damageDealt: number;
-  damageTaken: number;
+  damage: number;
 
-  xpGained: number;
+  enemyRemainingHealth: number;
 
-  lootTable?: string;
+  defeated: boolean;
 }

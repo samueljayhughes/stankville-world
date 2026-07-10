@@ -1,6 +1,7 @@
 import { redis } from "@devvit/redis";
 import { Inventory } from "../models/Inventory";
 import { Equipment } from "../models/Equipment";
+import { CombatSession } from "../game/models/CombatSession";
 
 export class StorageManager {
 
@@ -65,5 +66,51 @@ export class StorageManager {
       JSON.stringify(equipment)
     );
   }
+  private static combatKey(
+    sessionId: string
+  ): string {
+    return `combat:${sessionId}`;
+  }
 
+
+  static async setCombatSession(
+    session: CombatSession
+  ): Promise<void> {
+
+    await redis.set(
+      this.combatKey(session.id),
+      JSON.stringify(session)
+    );
+
+  }
+
+
+  static async getCombatSession(
+    sessionId: string
+  ): Promise<CombatSession | null> {
+
+    const data = await redis.get(
+      this.combatKey(sessionId)
+    );
+
+
+    if (!data) {
+      return null;
+    }
+
+
+    return JSON.parse(data) as CombatSession;
+
+  }
+
+
+  static async deleteCombatSession(
+    sessionId: string
+  ): Promise<void> {
+
+    await redis.del(
+      this.combatKey(sessionId)
+    );
+
+  }
 }
