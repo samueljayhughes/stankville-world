@@ -1,5 +1,10 @@
 import { redis, context } from "@devvit/web/server";
 import { StorageManager } from "../../core/StorageManager";
+import { CombatSystem } from "../systems/CombatSystem";
+import { LootSystem } from "../systems/LootSystem";
+import { NPCSystem } from "../systems/NPCSystem";
+import { QuestSystem } from "../systems/QuestSystem";
+import { EquipmentSystem } from "../systems/EquipmentSystem";
 /**
  * Stankville GameEngine (v2)
  *
@@ -176,4 +181,44 @@ public async setPlayerProfile(
 
     return world;
   }
+// -------------------------
+// Gameplay Systems
+// -------------------------
+
+public async attackEnemy(enemy: any, playerAttack: number) {
+  return CombatSystem.playerAttack(enemy, playerAttack);
+}
+
+public async enemyAttack(playerHealth: number, enemyAttack: number) {
+  return CombatSystem.enemyAttack(playerHealth, enemyAttack);
+}
+
+public async generateLoot(enemyId: string) {
+  return LootSystem.generate(enemyId);
+}
+
+public getNPC(id: string) {
+  return NPCSystem.getNPC(id);
+}
+
+public getNPCDialogue(id: string) {
+  return NPCSystem.getDialogue(id);
+}
+
+public getQuest(id: string) {
+  return QuestSystem.getQuest(id);
+}
+
+public questExists(id: string) {
+  return QuestSystem.exists(id);
+}
+
+public equipItem(equipment: any, itemId: string) {
+  return EquipmentSystem.equip(equipment, itemId);
+}
+
+public unequipItem(equipment: any, slot: any) {
+  return EquipmentSystem.unequip(equipment, slot);
+}
+
 }
