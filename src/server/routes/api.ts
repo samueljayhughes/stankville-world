@@ -2,20 +2,23 @@ import { Hono } from "hono";
 import { context } from "@devvit/web/server";
 import type { InitResponse } from "../../shared/api";
 import { GameEngine } from "../game/engine/GameEngine";
+import { EnemyFactory } from "../game/services/EnemyFactory";
+import { StorageManager } from "../core/StorageManager";
+
 
 type ErrorResponse = {
   status: "error";
   message: string;
 };
 
+
 export const api = new Hono();
 
 const engine = GameEngine.get();
 
+
 /**
  * INIT
- * Called when client loads the game
- * Returns player + world snapshot
  */
 api.get("/init", async (c) => {
   const { postId, userId } = context;
@@ -31,6 +34,7 @@ api.get("/init", async (c) => {
   }
 
   try {
+
     const [profile, stats, inventory, world] = await Promise.all([
       engine.getPlayerProfile(userId),
       engine.getPlayerStats(userId),
@@ -38,7 +42,7 @@ api.get("/init", async (c) => {
       engine.getWorldState(),
     ]);
 
-    // Create new player if none exists
+
     if (!profile) {
       await engine.setPlayerProfile(userId, {
         userId,
@@ -46,6 +50,7 @@ api.get("/init", async (c) => {
         name: `Wanderer-${userId.slice(0, 5)}`,
       });
     }
+
 
     const response: InitResponse = {
       type: "init",
@@ -61,61 +66,30 @@ api.get("/init", async (c) => {
       world,
     } as any;
 
+
     return c.json(response);
+
   } catch (err) {
-    console.error("Init error:", err);
 
     return c.json<ErrorResponse>(
       {
         status: "error",
-        message: err instanceof Error ? err.message : "Unknown error",
+        message: err instanceof Error
+          ? err.message
+          : "Unknown error",
       },
       500
     );
+
   }
 });
 
+
 /**
- * XP TEST ENDPOINT
- * temporary until client UI is built
+ * ADD XP TEST
  */
 api.post("/xp/add", async (c) => {
-  const { userId } = context;
 
-  if (!userId) {
-    return c.json<ErrorResponse>(
-      { status: "error", message: "Missing userId" },
-      400
-    );
-  }
-
-  const body = await c.req.json<{ amount: number }>();
-
-  const stats = await engine.addXP(userId, body.amount);
-
-  return c.json({
-    type: "xp_update",
-    stats,
-  });
-});
-
-/**
- * WORLD STATE
- */
-api.get("/world", async (c) => {
-  const world = await engine.getWorldState();
-
-  return c.json({
-    type: "world",
-    world,
-  });
-});
-
-/**
- * EXPLORE
- * Player explores Stankville
- */
-api.post("/explore", async (c) => {
   const { userId } = context;
 
   if (!userId) {
@@ -128,25 +102,135 @@ api.post("/explore", async (c) => {
     );
   }
 
+
+  const body = await c.req.json<{ amount:number }>();
+
+  const stats = await engine.addXP(
+    userId,
+    body.amount
+  );
+
+
+  return c.json({
+    type:"xp_update",
+    stats,
+  });
+
+});
+
+
+/**
+ * WORLD
+ */
+api.get("/world", async (c) => {
+
+  const world = await engine.getWorldState();
+
+  return c.json({
+    type:"world",
+    world,
+  });
+
+});
+
+
+/**
+ * EXPLORE
+ */
+api.post("/explore", async (c) => {
+
+  const { userId } = context;
+
+
+  if (!userId) {
+    return c.json<ErrorResponse>(
+      {
+        status:"error",
+        message:"Missing userId",
+      },
+      400
+    );
+  }
+
+
+  const encounter = engine.explore();
+
+
+  return c.json({
+    type:"exploration",
+    encounter,
+  });
+
+});
+
+
+/**
+ * START COMBAT
+ */
+api.post("/combat/start", async (c) => {
+
+  const { userId } = context;
+
+
+  if (!userId) {
+    return c.json<ErrorResponse>(
+      {
+        status:"error",
+        message:"Missing userId",
+      },
+      400
+    );
+  }
+
+
   try {
-    const encounter = engine.explore();
+
+    const body = await c.req.json<{
+      enemyId:string;
+    }>();
+
+
+    const enemy = EnemyFactory.create(
+      body.enemyId
+    );
+
+
+    const session = {
+      id: crypto.randomUUID(),
+
+      playerId:userId,
+
+      enemy,
+
+      turn:1,
+
+      startedAt:Date.now(),
+    };
+
+
+    await StorageManager.setCombatSession(
+      session
+    );
+
 
     return c.json({
-      type: "exploration",
-      encounter,
+      type:"combat_started",
+      session,
     });
 
-  } catch (err) {
-    console.error("Explore error:", err);
+
+  } catch(err) {
 
     return c.json<ErrorResponse>(
       {
-        status: "error",
+        status:"error",
         message: err instanceof Error
           ? err.message
           : "Unknown error",
       },
       500
     );
+
   }
+
 });
