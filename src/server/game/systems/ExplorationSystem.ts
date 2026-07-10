@@ -22,12 +22,25 @@ export class ExplorationSystem {
 
     const roll = Math.random();
 
+
     if (roll < 0.60) {
+
+      const enemies = [
+        "sewer_rat",
+        "trash_goblin",
+      ];
+
+      const enemyId =
+        enemies[
+          Math.floor(Math.random() * enemies.length)
+        ];
+
       return {
         type: "COMBAT",
-        enemyId: "slime",
+        enemyId,
       };
     }
+
 
     if (roll < 0.80) {
       return {
@@ -36,11 +49,13 @@ export class ExplorationSystem {
       };
     }
 
+
     if (roll < 0.95) {
       return {
         type: "LOOT",
       };
     }
+
 
     return {
       type: "NOTHING",
