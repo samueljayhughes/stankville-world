@@ -12,11 +12,16 @@ export class PlayerSystem {
     this.engine = GameEngine.get();
   }
 
+
   /**
-   * Get or create a player profile
+   * Get or create player profile
    */
-  public async getOrCreateProfile(userId: string): Promise<PlayerProfile> {
-    const existing = await this.engine.getPlayerProfile(userId);
+  public async getOrCreateProfile(
+    userId: string
+  ): Promise<PlayerProfile> {
+
+    const existing =
+      await this.engine.getPlayerProfile(userId);
 
     if (existing) {
       return existing;
@@ -28,65 +33,101 @@ export class PlayerSystem {
       createdAt: Date.now(),
     };
 
-    await this.engine.setPlayerProfile(userId, newProfile);
+    await this.engine.setPlayerProfile(
+      userId,
+      newProfile
+    );
 
     return newProfile;
   }
 
+
   /**
-   * Get player stats or initialize defaults
+   * Get player stats
    */
-  public async getStats(userId: string): Promise<PlayerStats> {
+  public async getStats(
+    userId: string
+  ): Promise<PlayerStats> {
+
     return await this.engine.getPlayerStats(userId);
   }
 
+
   /**
-   * Add XP and return updated stats
+   * Add XP
    */
-  public async addXP(userId: string, amount: number): Promise<PlayerStats> {
+  public async addXP(
+    userId: string,
+    amount: number
+  ): Promise<PlayerStats> {
+
     if (amount <= 0) {
       return await this.getStats(userId);
     }
 
-    return await this.engine.addXP(userId, amount);
+    return await this.engine.addXP(
+      userId,
+      amount
+    );
   }
 
+
   /**
-   * Grant item to player inventory
+   * Grant item
    */
   public async grantItem(
     userId: string,
     item: Omit<InventoryItem, "id" | "createdAt">
   ): Promise<InventoryItem[]> {
+
     const fullItem: InventoryItem = {
       id: crypto.randomUUID(),
       createdAt: Date.now(),
       ...item,
     };
 
-    const inventory = await this.engine.getInventory(userId);
+    const inventory =
+      await this.engine.getInventory(userId);
 
-    const updated = [...inventory, fullItem];
+    const updated = [
+      ...inventory,
+      fullItem,
+    ];
 
-    await this.engine["setInventory"]?.(userId, updated);
+    await this.engine.setInventory(
+      userId,
+      updated
+    );
 
     return updated;
   }
 
+
   /**
-   * Full player bootstrap (used by API init)
+   * Bootstrap player
    */
-  public async bootstrapPlayer(userId: string) {
-    const [profile, stats, inventory] = await Promise.all([
+  public async bootstrapPlayer(
+    userId: string
+  ) {
+
+    const [
+      profile,
+      stats,
+      inventory,
+      equipment,
+    ] = await Promise.all([
       this.getOrCreateProfile(userId),
       this.getStats(userId),
       this.engine.getInventory(userId),
+      this.engine.getEquipment(userId),
     ]);
+
 
     return {
       profile,
       stats,
       inventory,
+      equipment,
     };
   }
 }
