@@ -1,5 +1,6 @@
-export interface Equipment {
+import type { EquipmentSlot } from "./Item";
 
+export interface Equipment {
   weapon?: string;
 
   helmet?: string;
@@ -12,3 +13,12 @@ export interface Equipment {
 
   offhand?: string;
 }
+
+export const EquipmentSlots: EquipmentSlot[] = [
+  "weapon",
+  "helmet",
+  "chest",
+  "legs",
+  "boots",
+  "offhand",
+];
