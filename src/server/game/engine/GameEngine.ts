@@ -5,6 +5,7 @@ import { LootSystem } from "../systems/LootSystem";
 import { NPCSystem } from "../systems/NPCSystem";
 import { QuestSystem } from "../systems/QuestSystem";
 import { EquipmentSystem } from "../systems/EquipmentSystem";
+import { InventorySystem } from "../systems/InventorySystem";
 import { ExplorationSystem } from "../systems/ExplorationSystem";
 
 /**
@@ -28,9 +29,6 @@ export class GameEngine {
     return GameEngine.instance;
   }
 
-  private playerKey(userId: string, namespace: string): string {
-    return `player:${userId}:${namespace}`;
-  }
 
   private worldKey(namespace: string): string {
     return `world:${namespace}`;
@@ -114,7 +112,7 @@ export class GameEngine {
   // -------------------------
 
   public async getInventory(userId: string) {
-    return await StorageManager.getInventory(userId);
+    return await InventorySystem.getInventory(userId);
   }
 
 
