@@ -134,7 +134,7 @@ export class GameEngine {
     const inventory = await this.getInventory(userId);
 
     const updated = [
-      ...inventory,
+      inventory,
       {
         id: crypto.randomUUID(),
         ...item,

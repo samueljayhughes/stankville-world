@@ -90,7 +90,7 @@ export class PlayerSystem {
       await this.engine.getInventory(userId);
 
     const updated = [
-      ...inventory,
+      inventory,
       fullItem,
     ];
 
