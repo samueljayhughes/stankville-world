@@ -1,0 +1,1856 @@
+diff --git a/src/client/game.tsx b/src/client/game.tsx
+index 675080e..4da33ce 100644
+--- a/src/client/game.tsx
++++ b/src/client/game.tsx
+@@ -1,26 +1,81 @@
+ import './index.css';
+ 
+-import { StrictMode, useEffect, useState } from 'react';
++import { StrictMode, useEffect, useState, useCallback } from 'react';
+ import { createRoot } from 'react-dom/client';
+ 
+ 
++type Screen = "explore" | "combat" | "npc" | "victory" | "defeat";
++
++type InventoryItem = {
++  id: string;
++  quantity: number;
++  name: string;
++  description?: string;
++  type?: string;
++  rarity?: string;
++  slot?: string;
++};
++
++type Quest = {
++  id: string;
++  name: string;
++  description: string;
++  requiredLevel: number;
++  rewardXP: number;
++  rewardItems: string[];
++  accepted: boolean;
++  completed: boolean;
++};
++
++type Equipment = Record<string, string | undefined>;
++
+ type GameState = {
+-  status: string;
+-  enemyId?: string;
++  screen: Screen;
++  log: string;
++
++  // combat
+   sessionId?: string;
++  enemyId?: string;
++  enemyName?: string;
+   enemyHealth?: number;
+   playerHealth?: number;
++
++  // npc
++  npcId?: string;
++  npcName?: string;
++  dialogue?: string[];
++  quest?: Quest | null;
++
++  // victory
+   xp?: number;
+   loot?: string[];
+ };
+ 
+ 
++const RARITY_COLOR: Record<string, string> = {
++  common: "text-gray-300",
++  uncommon: "text-emerald-400",
++  rare: "text-sky-400",
++  epic: "text-purple-400",
++  legendary: "text-amber-400",
++};
++
++
+ export const App = () => {
+ 
++  const [ready, setReady] = useState(false);
++  const [level, setLevel] = useState(1);
++
+   const [state, setState] = useState<GameState>({
+-    status: "Loading Stankville...",
++    screen: "explore",
++    log: "Loading Stankville...",
+   });
+ 
++  const [inventoryOpen, setInventoryOpen] = useState(false);
++  const [inventory, setInventory] = useState<InventoryItem[]>([]);
++  const [equipment, setEquipment] = useState<Equipment>({});
++  const [inventoryLoading, setInventoryLoading] = useState(false);
++
+ 
+   useEffect(() => {
+ 
+@@ -31,290 +86,506 @@ export const App = () => {
+         const res = await fetch('/api/init');
+ 
+         if (!res.ok) {
+-          throw new Error(
+-            `Init failed ${res.status}`
+-          );
++          throw new Error(`Init failed ${res.status}`);
+         }
+ 
++        const data = await res.json();
+ 
+-        await res.json();
+-
++        setLevel(data.stats?.level ?? 1);
++        setReady(true);
+ 
+         setState({
+-          status:"Ready to explore.",
++          screen: "explore",
++          log: "Ready to explore.",
+         });
+ 
+-
+-      } catch(err) {
++      } catch (err) {
+ 
+         console.error(err);
+-
+         setState({
+-          status:"Failed to load game.",
++          screen: "explore",
++          log: "Failed to load game.",
+         });
+ 
+       }
+ 
+     };
+ 
+-
+     void init();
+ 
+   }, []);
+ 
+ 
++  const refreshInventory = useCallback(async () => {
+ 
+-  const explore = async () => {
+-
+-    const res =
+-      await fetch('/api/explore', {
+-        method:"POST",
+-      });
++    setInventoryLoading(true);
+ 
++    try {
+ 
+-    const data =
+-      await res.json();
++      const [invRes, eqRes] = await Promise.all([
++        fetch('/api/inventory'),
++        fetch('/api/equipment'),
++      ]);
+ 
++      const invData = await invRes.json();
++      const eqData = await eqRes.json();
+ 
+-    if(data.encounter?.type === "COMBAT") {
++      setInventory(invData.items ?? []);
++      setEquipment(eqData.equipment ?? {});
+ 
+-      setState({
+-
+-        status:`A ${data.encounter.enemyId} appeared!`,
+-
+-        enemyId:
+-          data.encounter.enemyId,
+-
+-      });
++    } catch (err) {
++      console.error(err);
++    } finally {
++      setInventoryLoading(false);
++    }
+ 
+-    } else {
++  }, []);
+ 
+-      setState({
+ 
+-        status:
+-          `You found ${data.encounter.type}`,
++  const toggleInventory = async () => {
+ 
+-      });
++    const next = !inventoryOpen;
++    setInventoryOpen(next);
+ 
++    if (next) {
++      await refreshInventory();
+     }
+ 
+   };
+ 
+ 
++  const equipItem = async (itemId: string) => {
+ 
+-  const startCombat = async () => {
+-
+-    if(!state.enemyId) return;
++    const res = await fetch('/api/equipment/equip', {
++      method: "POST",
++      headers: { "Content-Type": "application/json" },
++      body: JSON.stringify({ itemId }),
++    });
+ 
++    const data = await res.json();
+ 
+-    const res =
+-      await fetch('/api/combat/start', {
++    if (data.equipment) {
++      setEquipment(data.equipment);
++    }
+ 
+-        method:"POST",
++  };
+ 
+-        headers:{
+-          "Content-Type":"application/json",
+-        },
+ 
+-        body:JSON.stringify({
++  const explore = async () => {
+ 
+-          enemyId:
+-            state.enemyId,
++    const res = await fetch('/api/explore', { method: "POST" });
++    const data = await res.json();
++    const encounter = data.encounter;
+ 
+-        }),
++    if (encounter?.type === "COMBAT") {
+ 
++      setState({
++        screen: "explore",
++        log: `A ${encounter.enemyId.replaceAll('_', ' ')} appeared!`,
++        enemyId: encounter.enemyId,
+       });
+ 
++    } else if (encounter?.type === "NPC") {
+ 
+-    const data =
+-      await res.json();
++      try {
+ 
++        const npcRes = await fetch(`/api/npc/${encounter.npcId}`);
++        const npcData = await npcRes.json();
+ 
+-    setState({
++        setState({
++          screen: "npc",
++          log: `You meet ${npcData.npc?.name ?? "someone"}.`,
++          npcId: encounter.npcId,
++          npcName: npcData.npc?.name,
++          dialogue: npcData.dialogue ?? [],
++          quest: npcData.quest ?? null,
++        });
+ 
+-      status:
+-        `Fighting ${data.session.enemy.name}`,
++      } catch (err) {
++        console.error(err);
++        setState({ screen: "explore", log: "You wander past someone." });
++      }
+ 
+-      sessionId:
+-        data.session.id,
++    } else if (encounter?.type === "LOOT") {
+ 
+-      enemyId:
+-        data.session.enemy.id,
++      setState({ screen: "explore", log: "You found a little something on the ground." });
+ 
+-      enemyHealth:
+-        data.session.enemy.currentHealth,
++    } else {
+ 
+-      playerHealth:
+-        data.session.playerHealth,
++      setState({ screen: "explore", log: "Nothing but stink and silence." });
+ 
+-    });
++    }
+ 
+   };
+ 
+ 
++  const startCombat = async () => {
+ 
+-  const attack = async () => {
+-
+-    if(!state.sessionId) return;
+-
+-
+-    const res =
+-      await fetch('/api/combat/attack', {
+-
+-        method:"POST",
+-
+-        headers:{
+-          "Content-Type":"application/json",
+-        },
+-
+-        body:JSON.stringify({
++    if (!state.enemyId) return;
+ 
+-          sessionId:
+-            state.sessionId,
++    const res = await fetch('/api/combat/start', {
++      method: "POST",
++      headers: { "Content-Type": "application/json" },
++      body: JSON.stringify({ enemyId: state.enemyId }),
++    });
+ 
+-        }),
++    const data = await res.json();
+ 
+-      });
++    setState({
++      screen: "combat",
++      log: `Fighting ${data.session.enemy.name}`,
++      sessionId: data.session.id,
++      enemyId: data.session.enemy.id,
++      enemyName: data.session.enemy.name,
++      enemyHealth: data.session.enemy.currentHealth,
++      playerHealth: data.session.playerHealth,
++    });
+ 
++  };
+ 
+-    const data =
+-      await res.json();
+ 
++  const attack = async () => {
+ 
+-    if(data.type === "combat_victory") {
++    if (!state.sessionId) return;
+ 
+-      setState({
++    const res = await fetch('/api/combat/attack', {
++      method: "POST",
++      headers: { "Content-Type": "application/json" },
++      body: JSON.stringify({ sessionId: state.sessionId }),
++    });
+ 
+-        status:"Victory!",
++    const data = await res.json();
+ 
+-        xp:data.xp,
++    if (data.type === "combat_victory") {
+ 
+-        loot:data.loot,
++      setLevel(data.stats?.level ?? level);
+ 
+-      });
++      setState((prev) => ({
++        ...prev,
++        screen: "victory",
++        log: "Victory!",
++        xp: data.xp,
++        loot: data.loot,
++      }));
+ 
+       return;
+ 
+     }
+ 
++    if (data.type === "combat_defeat") {
+ 
+-    if(data.type === "combat_defeat") {
+-
+-      setState({
+-
+-        status:"You were defeated.",
+-
+-      });
++      setState((prev) => ({
++        ...prev,
++        screen: "defeat",
++        log: "You were defeated.",
++      }));
+ 
+       return;
+ 
+     }
+ 
+-
+-    setState(prev => ({
+-
++    setState((prev) => ({
+       ...prev,
+-
+-      status:
+-        `Turn ${data.turn}`,
+-
+-      enemyHealth:
+-        data.enemyHealth,
+-
+-      playerHealth:
+-        data.playerHealth,
+-
++      screen: "combat",
++      log: `Turn ${data.turn}`,
++      enemyHealth: data.enemyHealth,
++      playerHealth: data.playerHealth,
+     }));
+ 
+   };
+ 
+ 
++  const acceptQuest = async () => {
+ 
+-  return (
+-
+-    <div className="flex flex-col items-center justify-center min-h-screen gap-4 bg-white dark:bg-gray-900">
++    if (!state.quest) return;
+ 
+-      <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+-        Stankville
+-      </h1>
++    const res = await fetch(`/api/quest/${state.quest.id}/accept`, {
++      method: "POST",
++    });
+ 
++    if (!res.ok) {
++      const err = await res.json();
++      setState((prev) => ({ ...prev, log: err.message ?? "Couldn't accept quest." }));
++      return;
++    }
+ 
+-      <p className="text-gray-700 dark:text-gray-200">
+-        {state.status}
+-      </p>
++    setState((prev) => ({
++      ...prev,
++      log: `Accepted: ${prev.quest?.name}`,
++      quest: prev.quest ? { ...prev.quest, accepted: true } : null,
++    }));
+ 
++  };
+ 
+ 
+-      {state.enemyId && !state.sessionId && (
++  const completeQuest = async () => {
+ 
+-        <button
+-          className="px-4 py-2 bg-red-600 text-white rounded"
+-          onClick={startCombat}
+-        >
+-          Start Combat
+-        </button>
+-
+-      )}
++    if (!state.quest) return;
+ 
++    const res = await fetch(`/api/quest/${state.quest.id}/complete`, {
++      method: "POST",
++    });
+ 
++    const data = await res.json();
+ 
+-      {state.sessionId && (
++    if (!res.ok) {
++      setState((prev) => ({ ...prev, log: data.message ?? "Couldn't turn in quest." }));
++      return;
++    }
+ 
+-        <>
++    setLevel(data.stats?.level ?? level);
+ 
+-          <p>
+-            Player HP: {state.playerHealth}
+-          </p>
++    setState((prev) => ({
++      ...prev,
++      log: `Turned in: ${prev.quest?.name} (+${prev.quest?.rewardXP ?? 0} XP)`,
++      quest: prev.quest ? { ...prev.quest, accepted: false, completed: true } : null,
++    }));
+ 
+-          <p>
+-            Enemy HP: {state.enemyHealth}
+-          </p>
++  };
+ 
+ 
+-          <button
+-            className="px-4 py-2 bg-orange-600 text-white rounded"
+-            onClick={attack}
+-          >
+-            Attack
+-          </button>
++  const backToExploring = () => {
++    setState({ screen: "explore", log: "Ready to explore." });
++  };
+ 
+-        </>
+ 
+-      )}
++  return (
+ 
++    <div className="flex flex-col min-h-screen bg-[#0f1710] dark:bg-[#0f1710] text-stone-100">
+ 
++      <header className="flex items-center justify-between px-4 py-3 border-b border-stone-800">
+ 
+-      {!state.sessionId && !state.xp && (
++        <div>
++          <h1 className="text-xl font-bold tracking-wide text-lime-400">
++            Stankville
++          </h1>
++          <p className="text-xs text-stone-500">Lvl {level} Wanderer</p>
++        </div>
+ 
+         <button
+-          className="px-4 py-2 bg-green-600 text-white rounded"
+-          onClick={explore}
++          className="px-3 py-1.5 text-sm rounded border border-stone-700 hover:border-lime-500 hover:text-lime-400 transition-colors"
++          onClick={toggleInventory}
+         >
+-          Explore
++          🎒 Inventory
+         </button>
+ 
+-      )}
+-
++      </header>
+ 
++      <main className="flex-1 flex flex-col items-center justify-center gap-4 px-4 py-6">
+ 
+-      {state.xp !== undefined && (
+-
+-        <div>
++        <p className="text-stone-200 text-center max-w-sm">
++          {state.log}
++        </p>
+ 
+-          <p>
+-            XP gained: {state.xp}
+-          </p>
+-
+-          <p>
+-            Loot: {state.loot?.join(", ")}
+-          </p>
++        {!ready && (
++          <div className="text-stone-500 text-sm">...</div>
++        )}
+ 
++        {ready && state.screen === "explore" && !state.enemyId && (
+           <button
+-            className="px-4 py-2 bg-green-600 text-white rounded"
++            className="px-5 py-2.5 bg-lime-700 hover:bg-lime-600 text-white rounded-md font-medium transition-colors"
+             onClick={explore}
+           >
+-            Explore Again
++            Explore
++          </button>
++        )}
++
++        {ready && state.screen === "explore" && state.enemyId && (
++          <button
++            className="px-5 py-2.5 bg-red-700 hover:bg-red-600 text-white rounded-md font-medium transition-colors"
++            onClick={startCombat}
++          >
++            Fight
+           </button>
++        )}
++
++        {state.screen === "combat" && (
++          <div className="w-full max-w-sm flex flex-col gap-3">
++
++            <div className="flex justify-between text-sm">
++              <span>You: {state.playerHealth} HP</span>
++              <span>{state.enemyName}: {state.enemyHealth} HP</span>
++            </div>
++
++            <div className="flex gap-2 h-2">
++              <div className="flex-1 bg-stone-800 rounded overflow-hidden">
++                <div
++                  className="h-full bg-emerald-500"
++                  style={{ width: `${Math.max(0, state.playerHealth ?? 0)}%` }}
++                />
++              </div>
++              <div className="flex-1 bg-stone-800 rounded overflow-hidden">
++                <div
++                  className="h-full bg-red-500"
++                  style={{ width: `${Math.max(0, state.enemyHealth ?? 0)}%` }}
++                />
++              </div>
++            </div>
++
++            <button
++              className="px-5 py-2.5 bg-orange-700 hover:bg-orange-600 text-white rounded-md font-medium transition-colors"
++              onClick={attack}
++            >
++              Attack
++            </button>
++
++          </div>
++        )}
++
++        {state.screen === "npc" && (
++          <div className="w-full max-w-sm flex flex-col gap-3 bg-stone-900/60 border border-stone-800 rounded-lg p-4">
++
++            <h2 className="font-semibold text-lime-400">{state.npcName}</h2>
++
++            {state.dialogue?.map((line, i) => (
++              <p key={i} className="text-sm text-stone-300 italic">"{line}"</p>
++            ))}
++
++            {state.quest && !state.quest.completed && !state.quest.accepted && (
++              <div className="border-t border-stone-800 pt-3 flex flex-col gap-2">
++                <p className="text-sm">
++                  <span className="font-medium">{state.quest.name}</span>
++                  {" — "}{state.quest.description}
++                </p>
++                <p className="text-xs text-stone-500">
++                  Reward: {state.quest.rewardXP} XP
++                  {state.quest.rewardItems.length > 0 && ` + ${state.quest.rewardItems.join(", ")}`}
++                </p>
++                <button
++                  className="px-4 py-2 bg-lime-700 hover:bg-lime-600 text-white rounded-md text-sm"
++                  onClick={acceptQuest}
++                >
++                  Accept Quest
++                </button>
++              </div>
++            )}
++
++            {state.quest && state.quest.accepted && !state.quest.completed && (
++              <div className="border-t border-stone-800 pt-3 flex flex-col gap-2">
++                <p className="text-sm">Quest in progress: {state.quest.name}</p>
++                <button
++                  className="px-4 py-2 bg-amber-700 hover:bg-amber-600 text-white rounded-md text-sm"
++                  onClick={completeQuest}
++                >
++                  Turn In Quest
++                </button>
++              </div>
++            )}
++
++            {state.quest?.completed && (
++              <p className="text-sm text-stone-500 border-t border-stone-800 pt-3">
++                You've already helped with "{state.quest.name}".
++              </p>
++            )}
++
++            <button
++              className="px-4 py-2 border border-stone-700 hover:border-lime-500 rounded-md text-sm mt-1"
++              onClick={backToExploring}
++            >
++              Move On
++            </button>
++
++          </div>
++        )}
++
++        {state.screen === "victory" && (
++          <div className="flex flex-col items-center gap-2">
++            <p>XP gained: {state.xp}</p>
++            <p>Loot: {state.loot && state.loot.length > 0 ? state.loot.join(", ") : "nothing"}</p>
++            <button
++              className="px-5 py-2.5 bg-lime-700 hover:bg-lime-600 text-white rounded-md font-medium transition-colors"
++              onClick={explore}
++            >
++              Explore Again
++            </button>
++          </div>
++        )}
++
++        {state.screen === "defeat" && (
++          <div className="flex flex-col items-center gap-2">
++            <button
++              className="px-5 py-2.5 bg-stone-700 hover:bg-stone-600 text-white rounded-md font-medium transition-colors"
++              onClick={backToExploring}
++            >
++              Try Again
++            </button>
++          </div>
++        )}
++
++      </main>
++
++      {inventoryOpen && (
++
++        <div
++          className="fixed inset-0 bg-black/60 flex items-end sm:items-center justify-center z-10"
++          onClick={() => setInventoryOpen(false)}
++        >
++
++          <div
++            className="w-full sm:max-w-sm bg-stone-900 border border-stone-800 rounded-t-lg sm:rounded-lg p-4 max-h-[80vh] overflow-y-auto"
++            onClick={(e) => e.stopPropagation()}
++          >
++
++            <div className="flex items-center justify-between mb-3">
++              <h2 className="font-semibold text-lime-400">Inventory</h2>
++              <button
++                className="text-stone-500 hover:text-stone-300"
++                onClick={() => setInventoryOpen(false)}
++              >
++                ✕
++              </button>
++            </div>
++
++            {Object.values(equipment).some(Boolean) && (
++              <div className="mb-3 pb-3 border-b border-stone-800 text-sm">
++                <p className="text-stone-500 mb-1">Equipped</p>
++                {Object.entries(equipment)
++                  .filter(([, itemId]) => itemId)
++                  .map(([slot, itemId]) => (
++                    <p key={slot} className="text-stone-300">
++                      <span className="text-stone-500">{slot}:</span> {itemId}
++                    </p>
++                  ))}
++              </div>
++            )}
++
++            {inventoryLoading && <p className="text-stone-500 text-sm">Loading...</p>}
++
++            {!inventoryLoading && inventory.length === 0 && (
++              <p className="text-stone-500 text-sm">Empty. Go explore.</p>
++            )}
++
++            <ul className="flex flex-col gap-2">
++              {inventory.map((item) => (
++                <li
++                  key={item.id}
++                  className="flex items-center justify-between text-sm bg-stone-800/50 rounded px-3 py-2"
++                >
++                  <div>
++                    <span className={RARITY_COLOR[item.rarity ?? "common"] ?? "text-stone-200"}>
++                      {item.name}
++                    </span>
++                    {" "}
++                    <span className="text-stone-500">x{item.quantity}</span>
++                  </div>
++
++                  {item.slot && equipment[item.slot] !== item.id && (
++                    <button
++                      className="text-xs px-2 py-1 border border-stone-700 hover:border-lime-500 hover:text-lime-400 rounded transition-colors"
++                      onClick={() => equipItem(item.id)}
++                    >
++                      Equip
++                    </button>
++                  )}
++
++                  {item.slot && equipment[item.slot] === item.id && (
++                    <span className="text-xs text-lime-500">Equipped</span>
++                  )}
++                </li>
++              ))}
++            </ul>
++
++          </div>
+ 
+         </div>
+ 
+@@ -327,7 +598,6 @@ export const App = () => {
+ };
+ 
+ 
+-
+ createRoot(document.getElementById('root')!).render(
+ 
+   <StrictMode>
+diff --git a/src/server/core/StorageManager.ts b/src/server/core/StorageManager.ts
+index 15d2724..ffbc0c9 100644
+--- a/src/server/core/StorageManager.ts
++++ b/src/server/core/StorageManager.ts
+@@ -4,6 +4,11 @@ import { Equipment } from "../models/Equipment";
+ import { CombatSession } from "../game/models/CombatSession";
+ import type { PlayerStats, PlayerProfile } from "../../shared/types";
+ 
++export interface PlayerQuestState {
++  accepted: string[];
++  completed: string[];
++}
++
+ export class StorageManager {
+ 
+   private static playerKey(
+@@ -155,6 +160,41 @@ export class StorageManager {
+   }
+ 
+ 
++  // -------------------------
++  // Player Quests
++  // -------------------------
++
++  static async getPlayerQuests(
++    userId: string
++  ): Promise<PlayerQuestState> {
++
++    const data = await redis.get(
++      this.playerKey(userId, "quests")
++    );
++
++    if (!data) {
++      return {
++        accepted: [],
++        completed: [],
++      };
++    }
++
++    return JSON.parse(data) as PlayerQuestState;
++  }
++
++
++  static async setPlayerQuests(
++    userId: string,
++    quests: PlayerQuestState
++  ): Promise<void> {
++
++    await redis.set(
++      this.playerKey(userId, "quests"),
++      JSON.stringify(quests)
++    );
++  }
++
++
+   // -------------------------
+   // Combat Sessions
+   // -------------------------
+diff --git a/src/server/game/data/ItemRegistry.ts b/src/server/game/data/ItemRegistry.ts
+index 8c59af6..c328045 100644
+--- a/src/server/game/data/ItemRegistry.ts
++++ b/src/server/game/data/ItemRegistry.ts
+@@ -30,6 +30,7 @@ export const ItemRegistry: Record<string, Item> = {
+     rarity: "common",
+     value: 10,
+     stackable: false,
++    slot: "weapon",
+   },
+ 
+   wooden_shield: {
+@@ -40,6 +41,7 @@ export const ItemRegistry: Record<string, Item> = {
+     rarity: "common",
+     value: 8,
+     stackable: false,
++    slot: "offhand",
+   }
+ 
+ };
+diff --git a/src/server/game/engine/GameEngine.ts b/src/server/game/engine/GameEngine.ts
+index f27cc25..2b3df5f 100644
+--- a/src/server/game/engine/GameEngine.ts
++++ b/src/server/game/engine/GameEngine.ts
+@@ -6,6 +6,12 @@ import { NPCSystem } from "../systems/NPCSystem";
+ import { QuestSystem } from "../systems/QuestSystem";
+ import { EquipmentSystem } from "../systems/EquipmentSystem";
+ import { ExplorationSystem } from "../systems/ExplorationSystem";
++import { InventorySystem } from "../systems/InventorySystem";
++import { ItemSystem } from "../systems/ItemSystem";
++import type { Equipment, EquipmentSlot } from "../../models/Equipment";
++import type { Inventory } from "../../models/Inventory";
++import type { Enemy } from "../../models/Enemy";
++import type { PlayerProfile, PlayerStats, WorldState } from "../../../shared/types";
+ /**
+  * Stankville GameEngine (v2)
+  *
+@@ -30,10 +36,6 @@ export class GameEngine {
+   // Key System
+   // -------------------------
+ 
+-  private playerKey(userId: string, namespace: string): string {
+-    return `player:${userId}:${namespace}`;
+-  }
+-
+   private worldKey(namespace: string): string {
+     return `world:${namespace}`;
+   }
+@@ -61,7 +63,7 @@ public async getPlayerProfile(userId: string) {
+ 
+ public async setPlayerProfile(
+   userId: string,
+-  profile: any
++  profile: PlayerProfile
+ ) {
+   await StorageManager.setPlayerProfile(
+     userId,
+@@ -79,7 +81,7 @@ public async setPlayerProfile(
+ 
+   public async setPlayerStats(
+     userId: string,
+-    stats: any
++    stats: PlayerStats
+   ) {
+     await StorageManager.setPlayerStats(
+       userId,
+@@ -109,58 +111,76 @@ public async setPlayerProfile(
+   // Inventory
+   // -------------------------
+ 
+-  public async getInventory(userId: string) {
+-    const data = await redis.get(this.playerKey(userId, "inventory"));
+-    return data ? JSON.parse(data) : [];
++  public async getInventory(userId: string): Promise<Inventory> {
++    return InventorySystem.getInventory(userId);
+   }
+ 
+-  public async setInventory(userId: string, inventory: any[]) {
+-    await redis.set(
+-      this.playerKey(userId, "inventory"),
+-      JSON.stringify(inventory)
+-    );
++  public async addItem(userId: string, itemId: string, quantity = 1) {
++    return InventorySystem.addItem(userId, itemId, quantity);
+   }
+ 
+-  public async addItem(userId: string, item: any) {
+-    const inventory = await this.getInventory(userId);
++  public async removeItem(userId: string, itemId: string, quantity = 1) {
++    return InventorySystem.removeItem(userId, itemId, quantity);
++  }
+ 
+-    const updated = [
+-      ...inventory,
+-      {
+-        id: crypto.randomUUID(),
+-        ...item,
+-      },
+-    ];
++  public getItemDetails(itemId: string) {
++    return ItemSystem.getItem(itemId);
++  }
+ 
+-    await this.setInventory(userId, updated);
++  // -------------------------
++  // Equipment
++  // -------------------------
+ 
+-    return updated;
++  public async getEquipment(userId: string): Promise<Equipment> {
++    return StorageManager.getEquipment(userId);
++  }
++
++  public async equipItem(userId: string, itemId: string) {
++    const equipment = await StorageManager.getEquipment(userId);
++
++    const success = EquipmentSystem.equip(equipment, itemId);
++
++    if (success) {
++      await StorageManager.setEquipment(userId, equipment);
++    }
++
++    return { success, equipment };
++  }
++
++  public async unequipItem(userId: string, slot: EquipmentSlot) {
++    const equipment = await StorageManager.getEquipment(userId);
++
++    const removed = EquipmentSystem.unequip(equipment, slot);
++
++    await StorageManager.setEquipment(userId, equipment);
++
++    return { removed, equipment };
+   }
+ 
+   // -------------------------
+   // World State
+   // -------------------------
+ 
+-  public async getWorldState() {
++  public async getWorldState(): Promise<WorldState> {
+     const data = await redis.get(this.worldKey("state"));
+ 
+     return data
+-      ? JSON.parse(data)
++      ? (JSON.parse(data) as WorldState)
+       : {
+           time: Date.now(),
+           weather: "clear",
+-          events: [],
++          activeEvents: [],
+         };
+   }
+ 
+-  public async setWorldState(world: any) {
++  public async setWorldState(world: WorldState) {
+     await redis.set(
+       this.worldKey("state"),
+       JSON.stringify(world)
+     );
+   }
+ 
+-  public async updateWorldState(update: any) {
++  public async updateWorldState(update: Partial<WorldState>) {
+     const current = await this.getWorldState();
+ 
+     const updated = {
+@@ -190,7 +210,7 @@ public explore() {
+   return ExplorationSystem.explore();
+ }
+ 
+-public async attackEnemy(enemy: any, playerAttack: number) {
++public async attackEnemy(enemy: Enemy, playerAttack: number) {
+   return CombatSystem.playerAttack(enemy, playerAttack);
+ }
+ 
+@@ -210,6 +230,14 @@ public getNPCDialogue(id: string) {
+   return NPCSystem.getDialogue(id);
+ }
+ 
++public npcHasQuest(id: string) {
++  return NPCSystem.hasQuest(id);
++}
++
++public getNPCQuest(id: string) {
++  return NPCSystem.getQuest(id);
++}
++
+ public getQuest(id: string) {
+   return QuestSystem.getQuest(id);
+ }
+@@ -218,12 +246,72 @@ public questExists(id: string) {
+   return QuestSystem.exists(id);
+ }
+ 
+-public equipItem(equipment: any, itemId: string) {
+-  return EquipmentSystem.equip(equipment, itemId);
++// -------------------------
++// Player Quest Progress
++// -------------------------
++
++public async getPlayerQuests(userId: string) {
++  return StorageManager.getPlayerQuests(userId);
++}
++
++public async acceptQuest(userId: string, questId: string) {
++  const quest = QuestSystem.getQuest(questId);
++
++  if (!quest) {
++    throw new Error(`Unknown quest: ${questId}`);
++  }
++
++  const stats = await this.getPlayerStats(userId);
++
++  if (!QuestSystem.canAccept(questId, stats)) {
++    throw new Error(
++      `You must be level ${quest.requiredLevel} to accept this quest.`
++    );
++  }
++
++  const questState = await StorageManager.getPlayerQuests(userId);
++
++  if (
++    questState.accepted.includes(questId) ||
++    questState.completed.includes(questId)
++  ) {
++    return questState;
++  }
++
++  questState.accepted.push(questId);
++
++  await StorageManager.setPlayerQuests(userId, questState);
++
++  return questState;
+ }
+ 
+-public unequipItem(equipment: any, slot: any) {
+-  return EquipmentSystem.unequip(equipment, slot);
++public async completeQuest(userId: string, questId: string) {
++  const quest = QuestSystem.getQuest(questId);
++
++  if (!quest) {
++    throw new Error(`Unknown quest: ${questId}`);
++  }
++
++  const questState = await StorageManager.getPlayerQuests(userId);
++
++  if (!questState.accepted.includes(questId)) {
++    throw new Error("Quest has not been accepted.");
++  }
++
++  questState.accepted = questState.accepted.filter((id) => id !== questId);
++  questState.completed.push(questId);
++
++  await StorageManager.setPlayerQuests(userId, questState);
++
++  const stats = await this.addXP(userId, quest.rewardXP);
++
++  for (const itemId of quest.rewardItems) {
++    await InventorySystem.addItem(userId, itemId, 1);
++  }
++
++  const inventory = await InventorySystem.getInventory(userId);
++
++  return { questState, stats, inventory };
+ }
+ 
+ }
+diff --git a/src/server/game/systems/EquipmentSystem.ts b/src/server/game/systems/EquipmentSystem.ts
+index 24453e6..41b7376 100644
+--- a/src/server/game/systems/EquipmentSystem.ts
++++ b/src/server/game/systems/EquipmentSystem.ts
+@@ -10,7 +10,7 @@ export class EquipmentSystem {
+     equipment: Equipment,
+     itemId: string
+   ): boolean {
+-    const item = ItemRegistry.get(itemId);
++    const item = ItemRegistry[itemId];
+ 
+     if (!item) {
+       return false;
+@@ -20,9 +20,9 @@ export class EquipmentSystem {
+       return false;
+     }
+ 
+-    const slot = item.slot as EquipmentSlot;
++    const slot = item.slot;
+ 
+-    equipment.slots[slot] = itemId;
++    equipment[slot] = itemId;
+ 
+     return true;
+   }
+@@ -34,13 +34,13 @@ export class EquipmentSystem {
+     equipment: Equipment,
+     slot: EquipmentSlot
+   ): string | null {
+-    const equipped = equipment.slots[slot];
++    const equipped = equipment[slot];
+ 
+     if (!equipped) {
+       return null;
+     }
+ 
+-    equipment.slots[slot] = null;
++    delete equipment[slot];
+ 
+     return equipped;
+   }
+@@ -52,7 +52,7 @@ export class EquipmentSystem {
+     equipment: Equipment,
+     slot: EquipmentSlot
+   ): string | null {
+-    return equipment.slots[slot];
++    return equipment[slot] ?? null;
+   }
+ 
+   /**
+@@ -62,6 +62,6 @@ export class EquipmentSystem {
+     equipment: Equipment,
+     itemId: string
+   ): boolean {
+-    return Object.values(equipment.slots).includes(itemId);
++    return Object.values(equipment).includes(itemId);
+   }
+ }
+diff --git a/src/server/game/systems/ExplorationSystem.ts b/src/server/game/systems/ExplorationSystem.ts
+index f78af06..68a559d 100644
+--- a/src/server/game/systems/ExplorationSystem.ts
++++ b/src/server/game/systems/ExplorationSystem.ts
+@@ -1,3 +1,5 @@
++import { NPCRegistry } from "../data/NPCRegistry";
++
+ export type ExplorationResult =
+   | {
+       type: "COMBAT";
+@@ -33,7 +35,7 @@ export class ExplorationSystem {
+       const enemyId =
+         enemies[
+           Math.floor(Math.random() * enemies.length)
+-        ];
++        ] ?? enemies[0]!;
+ 
+       return {
+         type: "COMBAT",
+@@ -43,9 +45,16 @@ export class ExplorationSystem {
+ 
+ 
+     if (roll < 0.80) {
++
++      const npcIds = Object.keys(NPCRegistry);
++      const npcId =
++        npcIds[
++          Math.floor(Math.random() * npcIds.length)
++        ] ?? npcIds[0]!;
++
+       return {
+         type: "NPC",
+-        npcId: "merchant",
++        npcId,
+       };
+     }
+ 
+diff --git a/src/server/game/systems/InventorySystem.ts b/src/server/game/systems/InventorySystem.ts
+index bafceb9..a9a9946 100644
+--- a/src/server/game/systems/InventorySystem.ts
++++ b/src/server/game/systems/InventorySystem.ts
+@@ -4,48 +4,43 @@ import { Inventory } from "../../models/Inventory";
+ 
+ export class InventorySystem {
+ 
+-  constructor(
+-    private storage: StorageManager
+-  ) {}
+-
+-
+-  async getInventory(
++  static async getInventory(
+     playerId: string
+   ): Promise<Inventory> {
+ 
+-    return this.storage.getInventory(
++    return StorageManager.getInventory(
+       playerId
+     );
+   }
+ 
+ 
+-  async addItem(
++  static async addItem(
+     playerId: string,
+     itemId: string,
+     quantity: number = 1
+-  ) {
++  ): Promise<Inventory> {
+ 
+     const inventory =
+-      await this.storage.getInventory(
++      await StorageManager.getInventory(
+         playerId
+       );
+ 
+ 
+     const existing =
+       inventory.items.find(
+-        item => item.id === itemId
++        (item) => item.id === itemId
+       );
+ 
+ 
+-    if(existing){
++    if (existing) {
+       existing.quantity += quantity;
+     }
+     else {
+ 
+-      if(
++      if (
+         inventory.items.length >=
+         inventory.capacity
+-      ){
++      ) {
+         throw new Error(
+           "Inventory full"
+         );
+@@ -54,12 +49,12 @@ export class InventorySystem {
+ 
+       inventory.items.push({
+         id: itemId,
+-        quantity
++        quantity,
+       });
+     }
+ 
+ 
+-    await this.storage.saveInventory(
++    await StorageManager.setInventory(
+       playerId,
+       inventory
+     );
+@@ -67,4 +62,65 @@ export class InventorySystem {
+ 
+     return inventory;
+   }
++
++
++  /**
++   * Remove up to `quantity` of an item. Removes the stack entirely
++   * once it hits zero. Returns the updated inventory.
++   */
++  static async removeItem(
++    playerId: string,
++    itemId: string,
++    quantity: number = 1
++  ): Promise<Inventory> {
++
++    const inventory =
++      await StorageManager.getInventory(
++        playerId
++      );
++
++    const existing =
++      inventory.items.find(
++        (item) => item.id === itemId
++      );
++
++    if (!existing) {
++      return inventory;
++    }
++
++    existing.quantity -= quantity;
++
++    if (existing.quantity <= 0) {
++      inventory.items = inventory.items.filter(
++        (item) => item.id !== itemId
++      );
++    }
++
++    await StorageManager.setInventory(
++      playerId,
++      inventory
++    );
++
++    return inventory;
++  }
++
++
++  static async hasItem(
++    playerId: string,
++    itemId: string,
++    quantity: number = 1
++  ): Promise<boolean> {
++
++    const inventory =
++      await StorageManager.getInventory(
++        playerId
++      );
++
++    const existing =
++      inventory.items.find(
++        (item) => item.id === itemId
++      );
++
++    return (existing?.quantity ?? 0) >= quantity;
++  }
+ }
+diff --git a/src/server/game/systems/NPCSystem.ts b/src/server/game/systems/NPCSystem.ts
+index 45e9f50..f13276f 100644
+--- a/src/server/game/systems/NPCSystem.ts
++++ b/src/server/game/systems/NPCSystem.ts
+@@ -1,6 +1,13 @@
+ import { NPC } from "../../models/NPC";
+ import { NPCRegistry } from "../data/NPCRegistry";
+ 
++/**
++ * Maps quest-giver NPCs to the quest they offer.
++ */
++const QUEST_GIVERS: Record<string, string> = {
++  mayor_stank: "clear_sewers",
++};
++
+ export class NPCSystem {
+   /**
+    * Find an NPC by ID.
+@@ -37,7 +44,6 @@ export class NPCSystem {
+ 
+   /**
+    * Get the quest offered by an NPC.
+-   * Quest linking is not implemented yet.
+    */
+   static getQuest(id: string): string | null {
+     const npc = NPCRegistry[id];
+@@ -46,6 +52,6 @@ export class NPCSystem {
+       return null;
+     }
+ 
+-    return null;
++    return QUEST_GIVERS[id] ?? null;
+   }
+ }
+diff --git a/src/server/game/systems/PlayerSystem.ts b/src/server/game/systems/PlayerSystem.ts
+index d87df64..03b6fd2 100644
+--- a/src/server/game/systems/PlayerSystem.ts
++++ b/src/server/game/systems/PlayerSystem.ts
+@@ -2,7 +2,6 @@ import { GameEngine } from "../engine/GameEngine";
+ import type {
+   PlayerProfile,
+   PlayerStats,
+-  InventoryItem,
+ } from "../../../shared/types";
+ 
+ export class PlayerSystem {
+@@ -52,25 +51,14 @@ export class PlayerSystem {
+   }
+ 
+   /**
+-   * Grant item to player inventory
++   * Grant an item (by registry id) to the player's inventory.
+    */
+   public async grantItem(
+     userId: string,
+-    item: Omit<InventoryItem, "id" | "createdAt">
+-  ): Promise<InventoryItem[]> {
+-    const fullItem: InventoryItem = {
+-      id: crypto.randomUUID(),
+-      createdAt: Date.now(),
+-      ...item,
+-    };
+-
+-    const inventory = await this.engine.getInventory(userId);
+-
+-    const updated = [...inventory, fullItem];
+-
+-    await this.engine["setInventory"]?.(userId, updated);
+-
+-    return updated;
++    itemId: string,
++    quantity = 1
++  ) {
++    return this.engine.addItem(userId, itemId, quantity);
+   }
+ 
+   /**
+diff --git a/src/server/game/systems/QuestSystem.ts b/src/server/game/systems/QuestSystem.ts
+index 44d28f7..8583b0d 100644
+--- a/src/server/game/systems/QuestSystem.ts
++++ b/src/server/game/systems/QuestSystem.ts
+@@ -1,5 +1,6 @@
+ import { Quest } from "../../models/Quest";
+ import { QuestRegistry } from "../data/QuestRegistry";
++import type { PlayerStats } from "../../../shared/types";
+ 
+ export class QuestSystem {
+   /**
+@@ -30,4 +31,17 @@ export class QuestSystem {
+   static updateProgress(current: number, amount = 1): number {
+     return current + amount;
+   }
++
++  /**
++   * Whether a player meets the level requirement to accept a quest.
++   */
++  static canAccept(id: string, stats: PlayerStats): boolean {
++    const quest = QuestRegistry[id];
++
++    if (!quest) {
++      return false;
++    }
++
++    return stats.level >= quest.requiredLevel;
++  }
+ }
+diff --git a/src/server/models/Equipment.ts b/src/server/models/Equipment.ts
+index 5f6970e..8e5ca45 100644
+--- a/src/server/models/Equipment.ts
++++ b/src/server/models/Equipment.ts
+@@ -1,14 +1,16 @@
+-export interface Equipment {
++export type EquipmentSlot =
++  | "weapon"
++  | "helmet"
++  | "chest"
++  | "legs"
++  | "boots"
++  | "offhand";
+ 
++export interface Equipment {
+   weapon?: string;
+-
+   helmet?: string;
+-
+   chest?: string;
+-
+   legs?: string;
+-
+   boots?: string;
+-
+   offhand?: string;
+ }
+diff --git a/src/server/models/Item.ts b/src/server/models/Item.ts
+index c34dbeb..ce85e99 100644
+--- a/src/server/models/Item.ts
++++ b/src/server/models/Item.ts
+@@ -21,4 +21,6 @@ export interface Item {
+   rarity: ItemRarity;
+   value: number;
+   stackable: boolean;
++  /** Equipment slot this item occupies, if it's equippable. */
++  slot?: "weapon" | "helmet" | "chest" | "legs" | "boots" | "offhand";
+ }
+diff --git a/src/server/routes/api.ts b/src/server/routes/api.ts
+index a44bf44..58e5deb 100644
+--- a/src/server/routes/api.ts
++++ b/src/server/routes/api.ts
+@@ -1,12 +1,14 @@
+ import { Hono } from "hono";
+ import { context } from "@devvit/web/server";
+-import type { InitResponse } from "../../shared/api";
++import type { InitResponse } from "../../shared/types";
+ 
+ import { GameEngine } from "../game/engine/GameEngine";
+ import { EnemyFactory } from "../game/services/EnemyFactory";
+ import { StorageManager } from "../core/StorageManager";
+ 
+ import { CombatSystem } from "../game/systems/CombatSystem";
++import { ItemSystem } from "../game/systems/ItemSystem";
++import type { EquipmentSlot } from "../models/Equipment";
+ 
+ 
+ type ErrorResponse = {
+@@ -87,7 +89,7 @@ api.get("/init", async (c) => {
+ 
+       world,
+ 
+-    } as any;
++    };
+ 
+ 
+     return c.json(response);
+@@ -214,6 +216,296 @@ api.post("/explore", async(c)=>{
+ 
+ 
+ 
++/**
++ * INVENTORY
++ */
++api.get("/inventory", async(c)=>{
++
++  const { userId } = context;
++
++  if(!userId){
++    return c.json<ErrorResponse>(
++      { status:"error", message:"Missing userId" },
++      400
++    );
++  }
++
++  const inventory = await engine.getInventory(userId);
++
++  const items = inventory.items.map((slot) => {
++    const details = ItemSystem.getItem(slot.id);
++
++    return {
++      id: slot.id,
++      quantity: slot.quantity,
++      name: details?.name ?? slot.id,
++      description: details?.description,
++      type: details?.type,
++      rarity: details?.rarity,
++      slot: details?.slot,
++    };
++  });
++
++  return c.json({
++    type: "inventory",
++    capacity: inventory.capacity,
++    items,
++  });
++
++});
++
++
++
++/**
++ * EQUIPMENT
++ */
++api.get("/equipment", async(c)=>{
++
++  const { userId } = context;
++
++  if(!userId){
++    return c.json<ErrorResponse>(
++      { status:"error", message:"Missing userId" },
++      400
++    );
++  }
++
++  const equipment = await engine.getEquipment(userId);
++
++  return c.json({
++    type: "equipment",
++    equipment,
++  });
++
++});
++
++
++api.post("/equipment/equip", async(c)=>{
++
++  const { userId } = context;
++
++  if(!userId){
++    return c.json<ErrorResponse>(
++      { status:"error", message:"Missing userId" },
++      400
++    );
++  }
++
++  try {
++
++    const body = await c.req.json<{ itemId: string }>();
++
++    const hasItem = await engine.getInventory(userId);
++    const owned = hasItem.items.find((i) => i.id === body.itemId);
++
++    if (!owned) {
++      return c.json<ErrorResponse>(
++        { status:"error", message:"You don't have that item" },
++        400
++      );
++    }
++
++    const { success, equipment } = await engine.equipItem(userId, body.itemId);
++
++    if (!success) {
++      return c.json<ErrorResponse>(
++        { status:"error", message:"That item can't be equipped" },
++        400
++      );
++    }
++
++    return c.json({
++      type: "equipment_updated",
++      equipment,
++    });
++
++  } catch(err){
++    return c.json<ErrorResponse>(
++      { status:"error", message: err instanceof Error ? err.message : "Unknown error" },
++      500
++    );
++  }
++
++});
++
++
++api.post("/equipment/unequip", async(c)=>{
++
++  const { userId } = context;
++
++  if(!userId){
++    return c.json<ErrorResponse>(
++      { status:"error", message:"Missing userId" },
++      400
++    );
++  }
++
++  try {
++
++    const body = await c.req.json<{ slot: EquipmentSlot }>();
++
++    const { removed, equipment } = await engine.unequipItem(userId, body.slot);
++
++    return c.json({
++      type: "equipment_updated",
++      removed,
++      equipment,
++    });
++
++  } catch(err){
++    return c.json<ErrorResponse>(
++      { status:"error", message: err instanceof Error ? err.message : "Unknown error" },
++      500
++    );
++  }
++
++});
++
++
++
++/**
++ * NPC
++ */
++api.get("/npc/:id", async(c)=>{
++
++  const { userId } = context;
++
++  if(!userId){
++    return c.json<ErrorResponse>(
++      { status:"error", message:"Missing userId" },
++      400
++    );
++  }
++
++  const npcId = c.req.param("id");
++
++  const npc = engine.getNPC(npcId);
++
++  if (!npc) {
++    return c.json<ErrorResponse>(
++      { status:"error", message:"Unknown NPC" },
++      404
++    );
++  }
++
++  const dialogue = engine.getNPCDialogue(npcId);
++  const hasQuest = engine.npcHasQuest(npcId);
++  const questId = engine.getNPCQuest(npcId);
++  const quest = questId ? engine.getQuest(questId) : undefined;
++
++  const playerQuests = await engine.getPlayerQuests(userId);
++
++  return c.json({
++    type: "npc",
++    npc,
++    dialogue,
++    hasQuest,
++    quest: quest
++      ? {
++          ...quest,
++          accepted: playerQuests.accepted.includes(quest.id),
++          completed: playerQuests.completed.includes(quest.id),
++        }
++      : null,
++  });
++
++});
++
++
++
++/**
++ * QUESTS
++ */
++api.get("/quests", async(c)=>{
++
++  const { userId } = context;
++
++  if(!userId){
++    return c.json<ErrorResponse>(
++      { status:"error", message:"Missing userId" },
++      400
++    );
++  }
++
++  const state = await engine.getPlayerQuests(userId);
++
++  return c.json({
++    type: "quests",
++    accepted: state.accepted.map((id) => engine.getQuest(id)),
++    completed: state.completed.map((id) => engine.getQuest(id)),
++  });
++
++});
++
++
++api.post("/quest/:id/accept", async(c)=>{
++
++  const { userId } = context;
++
++  if(!userId){
++    return c.json<ErrorResponse>(
++      { status:"error", message:"Missing userId" },
++      400
++    );
++  }
++
++  const questId = c.req.param("id");
++
++  try {
++
++    const state = await engine.acceptQuest(userId, questId);
++
++    return c.json({
++      type: "quest_accepted",
++      state,
++    });
++
++  } catch(err){
++    return c.json<ErrorResponse>(
++      { status:"error", message: err instanceof Error ? err.message : "Unknown error" },
++      400
++    );
++  }
++
++});
++
++
++api.post("/quest/:id/complete", async(c)=>{
++
++  const { userId } = context;
++
++  if(!userId){
++    return c.json<ErrorResponse>(
++      { status:"error", message:"Missing userId" },
++      400
++    );
++  }
++
++  const questId = c.req.param("id");
++
++  try {
++
++    const { questState, stats, inventory } =
++      await engine.completeQuest(userId, questId);
++
++    return c.json({
++      type: "quest_completed",
++      questState,
++      stats,
++      inventory,
++    });
++
++  } catch(err){
++    return c.json<ErrorResponse>(
++      { status:"error", message: err instanceof Error ? err.message : "Unknown error" },
++      400
++    );
++  }
++
++});
++
++
++
+ /**
+  * START COMBAT
+  */
+@@ -392,6 +684,13 @@ if(playerResult.defeated){
+     );
+ 
+ 
++  for (const itemId of loot) {
++    await engine.addItem(userId, itemId, 1);
++  }
++
++  const inventory = await engine.getInventory(userId);
++
++
+   await StorageManager.deleteCombatSession(
+     session.id
+   );
+@@ -409,6 +708,8 @@ if(playerResult.defeated){
+ 
+     stats,
+ 
++    inventory,
++
+   });
+ 
+ }
+diff --git a/src/shared/types.ts b/src/shared/types.ts
+index c68c390..45ff50c 100644
+--- a/src/shared/types.ts
++++ b/src/shared/types.ts
+@@ -35,6 +35,21 @@ export interface InventoryItem {
+   createdAt: Timestamp;
+ }
+ 
++/**
++ * INVENTORY STATE
++ * A player's inventory: a capacity plus item id/quantity slots
++ * (matches server/models/Inventory.ts).
++ */
++export interface InventorySlot {
++  id: string;
++  quantity: number;
++}
++
++export interface InventoryState {
++  capacity: number;
++  items: InventorySlot[];
++}
++
+ /**
+  * WORLD STATE
+  * Global persistent simulation
+@@ -96,7 +111,7 @@ export interface InitResponse {
+   username: string;
+   profile: PlayerProfile;
+   stats: PlayerStats;
+-  inventory: any[];
++  inventory: InventoryState;
+   world: WorldState;
+ }
+ 

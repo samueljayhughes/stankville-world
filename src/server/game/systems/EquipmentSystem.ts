@@ -1,10 +1,10 @@
-import { Equipment, EquipmentSlot } from "../../models/Equipment";
+import { Equipment } from "../../models/Equipment";
+import type { EquipmentSlot } from "../../models/Item";
 import { ItemRegistry } from "../data/ItemRegistry";
 
 export class EquipmentSystem {
   /**
    * Equip an item into the appropriate slot.
-   * Returns true if successful.
    */
   static equip(
     equipment: Equipment,
@@ -22,10 +22,11 @@ export class EquipmentSystem {
 
     const slot = item.slot as EquipmentSlot;
 
-    equipment.slots[slot] = itemId;
+    equipment[slot] = itemId;
 
     return true;
   }
+
 
   /**
    * Remove an equipped item.
@@ -34,16 +35,17 @@ export class EquipmentSystem {
     equipment: Equipment,
     slot: EquipmentSlot
   ): string | null {
-    const equipped = equipment.slots[slot];
+    const equipped = equipment[slot];
 
     if (!equipped) {
       return null;
     }
 
-    equipment.slots[slot] = null;
+    delete equipment[slot];
 
     return equipped;
   }
+
 
   /**
    * Check what item is equipped.
@@ -52,8 +54,9 @@ export class EquipmentSystem {
     equipment: Equipment,
     slot: EquipmentSlot
   ): string | null {
-    return equipment.slots[slot];
+    return equipment[slot] ?? null;
   }
+
 
   /**
    * Determine whether an item is currently equipped.
@@ -62,6 +65,40 @@ export class EquipmentSystem {
     equipment: Equipment,
     itemId: string
   ): boolean {
-    return Object.values(equipment.slots).includes(itemId);
+    return Object.values(equipment).includes(itemId);
+  }
+
+
+  /**
+   * Calculate total combat bonuses from equipped items.
+   */
+  static getTotalStats(
+    equipment: Equipment
+  ) {
+    let attack = 0;
+    let defense = 0;
+    let health = 0;
+
+    for (const itemId of Object.values(equipment)) {
+      if (!itemId) {
+        continue;
+      }
+
+      const item = ItemRegistry.get(itemId);
+
+      if (!item?.stats) {
+        continue;
+      }
+
+      attack += item.stats.attack ?? 0;
+      defense += item.stats.defense ?? 0;
+      health += item.stats.health ?? 0;
+    }
+
+    return {
+      attack,
+      defense,
+      health,
+    };
   }
 }

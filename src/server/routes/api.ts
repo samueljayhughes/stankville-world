@@ -7,6 +7,7 @@ import { EnemyFactory } from "../game/services/EnemyFactory";
 import { StorageManager } from "../core/StorageManager";
 
 import { CombatSystem } from "../game/systems/CombatSystem";
+import { EquipmentSystem } from "../game/systems/EquipmentSystem";
 
 
 type ErrorResponse = {
@@ -40,13 +41,19 @@ api.get("/init", async (c) => {
 
   try {
 
-    const [profile, stats, inventory, world] =
-      await Promise.all([
-        engine.getPlayerProfile(userId),
-        engine.getPlayerStats(userId),
-        engine.getInventory(userId),
-        engine.getWorldState(),
-      ]);
+    const [
+      profile,
+      stats,
+      inventory,
+      equipment,
+      world
+    ] = await Promise.all([
+      engine.getPlayerProfile(userId),
+      engine.getPlayerStats(userId),
+      engine.getInventory(userId),
+      engine.getEquipment(userId),
+      engine.getWorldState(),
+    ]);
 
 
     if (!profile) {
@@ -85,6 +92,8 @@ api.get("/init", async (c) => {
 
       inventory,
 
+      equipment,
+
       world,
 
     } as any;
@@ -111,11 +120,47 @@ api.get("/init", async (c) => {
 });
 
 
-
 /**
  * ADD XP TEST
  */
-api.post("/xp/add", async (c)=>{
+api.post("/xp/add", async(c)=>{
+
+  const { userId } = context;
+
+  if(!userId){
+    return c.json<ErrorResponse>(
+      {
+        status:"error",
+        message:"Missing userId",
+      },
+      400
+    );
+  }
+
+
+  const body =
+    await c.req.json<{amount:number}>();
+
+
+  const stats =
+    await engine.addXP(
+      userId,
+      body.amount
+    );
+
+
+  return c.json({
+    type:"xp_update",
+    stats,
+  });
+
+});
+
+
+/**
+ * EQUIP ITEM
+ */
+api.post("/equipment/equip", async(c)=>{
 
   const { userId } = context;
 
@@ -134,26 +179,52 @@ api.post("/xp/add", async (c)=>{
 
 
   const body =
-    await c.req.json<{amount:number}>();
+    await c.req.json<{
+      itemId:string;
+    }>();
 
 
-  const stats =
-    await engine.addXP(
-      userId,
-      body.amount
+  const equipment =
+    await engine.getEquipment(
+      userId
     );
+
+
+  const success =
+    engine.equipItem(
+      equipment,
+      body.itemId
+    );
+
+
+  if(!success){
+
+    return c.json<ErrorResponse>(
+      {
+        status:"error",
+        message:"Unable to equip item",
+      },
+      400
+    );
+
+  }
+
+
+  await engine.setEquipment(
+    userId,
+    equipment
+  );
 
 
   return c.json({
 
-    type:"xp_update",
+    success:true,
 
-    stats,
+    equipment,
 
   });
 
 });
-
 
 
 /**
@@ -174,7 +245,6 @@ api.get("/world", async(c)=>{
   });
 
 });
-
 
 
 /**
@@ -213,7 +283,6 @@ api.post("/explore", async(c)=>{
 });
 
 
-
 /**
  * START COMBAT
  */
@@ -235,68 +304,49 @@ api.post("/combat/start", async(c)=>{
   }
 
 
-  try {
-
-    const body =
-      await c.req.json<{
-        enemyId:string;
-      }>();
+  const body =
+    await c.req.json<{
+      enemyId:string;
+    }>();
 
 
-    const enemy =
-      EnemyFactory.create(
-        body.enemyId
-      );
-
-
-    const session = {
-
-      id:crypto.randomUUID(),
-
-      playerId:userId,
-
-      enemy,
-
-      playerHealth:100,
-
-      turn:1,
-
-      startedAt:Date.now(),
-
-    };
-
-
-    await StorageManager.setCombatSession(
-      session
+  const enemy =
+    EnemyFactory.create(
+      body.enemyId
     );
 
 
-    return c.json({
+  const session = {
 
-      type:"combat_started",
+    id:crypto.randomUUID(),
 
-      session,
+    playerId:userId,
 
-    });
+    enemy,
+
+    playerHealth:100,
+
+    turn:1,
+
+    startedAt:Date.now(),
+
+  };
 
 
-  } catch(err){
+  await StorageManager.setCombatSession(
+    session
+  );
 
-    return c.json<ErrorResponse>(
-      {
-        status:"error",
-        message:
-          err instanceof Error
-          ? err.message
-          :"Unknown error",
-      },
-      500
-    );
 
-  }
+  return c.json({
+
+    type:"combat_started",
+
+    session,
+
+  });
 
 });
-
 
 
 /**
@@ -347,7 +397,6 @@ api.post("/combat/attack", async(c)=>{
     }
 
 
-
     if(session.playerId !== userId){
 
       return c.json<ErrorResponse>(
@@ -361,10 +410,25 @@ api.post("/combat/attack", async(c)=>{
     }
 
 
+    const equipment =
+      await engine.getEquipment(
+        userId
+      );
+
+
+    const bonuses =
+      EquipmentSystem.getTotalStats(
+        equipment
+      );
+
+
+    const playerAttack =
+      10 + bonuses.attack;
+
 
     const playerDamage =
       CombatSystem.calculateDamage(
-        10,
+        playerAttack,
         session.enemy.defense
       );
 
@@ -376,42 +440,41 @@ api.post("/combat/attack", async(c)=>{
       );
 
 
+    if(playerResult.defeated){
 
-if(playerResult.defeated){
-
-  const stats =
-    await engine.addXP(
-      userId,
-      session.enemy.xpReward
-    );
-
-
-  const loot =
-    await engine.generateLoot(
-      session.enemy.id
-    );
+      const stats =
+        await engine.addXP(
+          userId,
+          session.enemy.xpReward
+        );
 
 
-  await StorageManager.deleteCombatSession(
-    session.id
-  );
+      const loot =
+        await engine.generateLoot(
+          session.enemy.id
+        );
 
 
-  return c.json({
+      await StorageManager.deleteCombatSession(
+        session.id
+      );
 
-    type:"combat_victory",
 
-    damage:playerDamage,
+      return c.json({
 
-    xp:session.enemy.xpReward,
+        type:"combat_victory",
 
-    loot,
+        damage:playerDamage,
 
-    stats,
+        xp:session.enemy.xpReward,
 
-  });
+        loot,
 
-}
+        stats,
+
+      });
+
+    }
 
 
     const enemyResult =
@@ -446,7 +509,6 @@ if(playerResult.defeated){
     }
 
 
-
     await StorageManager.setCombatSession(
       session
     );
@@ -471,7 +533,6 @@ if(playerResult.defeated){
         session.turn,
 
     });
-
 
 
   } catch(err){
