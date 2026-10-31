@@ -17,6 +17,15 @@ type GameState = {
   xpGained?: number;
 };
 
+type Particle = {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  emoji: string;
+};
+
 const C = {
   primary: '#84cc16',
   secondary: '#06b6d4', 
@@ -36,9 +45,8 @@ export const App = () => {
     xpToNext: 100,
   });
 
-  const [particles, setParticles] = useState<any[]>([]);
+  const [particles, setParticles] = useState<Particle[]>([]);
   const [shake, setShake] = useState(0);
-  const [pulse, setPulse] = useState(1);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -48,7 +56,7 @@ export const App = () => {
   }, []);
 
   const burst = useCallback((cx: number, cy: number, count = 15, emoji = '✨') => {
-    const np = [];
+    const np: Particle[] = [];
     for (let i = 0; i < count; i++) {
       const angle = (i / count) * Math.PI * 2;
       const speed = 3 + Math.random() * 5;
@@ -58,7 +66,6 @@ export const App = () => {
   }, []);
 
   const triggerShake = () => { setShake(10); setTimeout(() => setShake(0), 200); };
-  const triggerPulse = () => { setPulse(2); setTimeout(() => setPulse(1), 600); };
 
   useEffect(() => {
     const init = async () => {
@@ -66,7 +73,6 @@ export const App = () => {
         const res = await fetch('/api/init');
         const data = await res.json();
         setState(p => ({ ...p, screen: 'explore', level: data.stats?.level ?? 1, hp: data.stats?.health ?? 100, maxHp: data.stats?.maxHealth ?? 100, xp: data.stats?.xp ?? 0 }));
-        triggerPulse();
         burst(window.innerWidth / 2, window.innerHeight / 2, 25);
       } catch (e) { console.error(e); }
     };
@@ -79,7 +85,10 @@ export const App = () => {
       const data = await res.json();
       if (data.encounter?.type === 'COMBAT') {
         const names: Record<string, string> = { sewer_rat: '🐀 Sewer Rat', trash_goblin: '👹 Trash Goblin' };
-        setState(p => ({ ...p, screen: 'combat', sessionId: 'session_' + Date.now(), enemyName: names[data.encounter.enemyId] || 'Enemy', enemyHp: 50, enemyMaxHp: 50 }));
+        const startRes = await fetch('/api/combat/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enemyId: data.encounter.enemyId }) });
+        const started = await startRes.json();
+        const enemy = started.session?.enemy;
+        setState(p => ({ ...p, screen: 'combat', sessionId: started.session?.id, enemyName: names[data.encounter.enemyId] || enemy?.name || 'Enemy', enemyHp: enemy?.currentHealth ?? 50, enemyMaxHp: enemy?.health ?? 50 }));
         triggerShake();
         burst(window.innerWidth / 2, window.innerHeight / 2, 20);
       }
@@ -96,13 +105,12 @@ export const App = () => {
       const data = await res.json();
 
       if (data.type === 'combat_victory') {
-        triggerPulse();
         burst(window.innerWidth / 2, window.innerHeight / 2, 40, '🏆');
         setState(p => ({ ...p, screen: 'victory', level: data.stats?.level ?? p.level, xpGained: data.xp, loot: data.loot }));
       } else if (data.type === 'combat_defeat') {
         setState(p => ({ ...p, screen: 'defeat' }));
       } else {
-        setState(p => ({ ...p, enemyHp: Math.max(0, (p.enemyHp ?? 50) - (data.damage || 15)), hp: Math.max(0, data.playerHealth ?? p.hp) }));
+        setState(p => ({ ...p, enemyHp: Math.max(0, data.enemyHealth ?? (p.enemyHp ?? 50) - (data.playerDamage || 15)), hp: Math.max(0, data.playerHealth ?? p.hp) }));
       }
     } catch (e) { console.error(e); }
   }, [state.sessionId, burst]);
@@ -120,7 +128,7 @@ export const App = () => {
 
       <div style={{ position: 'relative', zIndex: 5 }}>
         <header style={{ background: `linear-gradient(90deg, rgba(132,204,22,0.15), rgba(6,182,212,0.15))`, borderBottom: `4px solid ${C.primary}`, padding: '20px', textAlign: 'center', boxShadow: `0 0 30px ${C.primary}` }}>
-          <h1 style={{ fontSize: '56px', margin: '0 0 20px 0', textShadow: `0 0 20px ${C.primary}, 0 0 40px ${C.secondary}`, background: `linear-gradient(90deg, ${C.primary}, ${C.secondary}, ${C.accent})`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text', fontWeight: 'bold', letterSpacing: '4px' }}>⚡ STANKVILLE ⚡</h1>
+          <h1 style={{ fontSize: 'clamp(28px, 8vw, 56px)', margin: '0 0 20px 0', textShadow: `0 0 20px ${C.primary}, 0 0 40px ${C.secondary}`, background: `linear-gradient(90deg, ${C.primary}, ${C.secondary}, ${C.accent})`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text', fontWeight: 'bold', letterSpacing: '4px' }}>⚡ STANKVILLE ⚡</h1>
           <div style={{ display: 'flex', justifyContent: 'center', gap: '40px', fontSize: '20px', fontWeight: 'bold' }}>
             <div style={{ color: C.primary }}>🎖️ LVL {state.level}</div>
             <div style={{ color: C.secondary }}>❤️ {state.hp}/{state.maxHp}</div>
