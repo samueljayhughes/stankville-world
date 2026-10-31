@@ -50,3 +50,37 @@ You are writing a Devvit web application that will be executed on Reddit.com.
 - Whenever you add an endpoint for a new menu item action, ensure that you've added the corresponding mapping to `devvit.json` so that it is properly registered
 
 Docs: https://developers.reddit.com/docs/llms.txt.
+
+## Running the app locally (Base44 sandbox preview)
+
+The real app only runs on Reddit: `npm run dev` is `devvit playtest`, which needs
+a Reddit login, a tunnel to Reddit and Devvit's plugin host (that host is what
+provides `context` and `redis`). None of that exists in a sandbox, so the
+preview runs the same source through a small harness in `dev/`:
+
+```
+docker compose -f docker-compose.base44.yml up -d      # dev server on :3000
+```
+
+- `dev/vite.config.mjs` is the preview config: Vite dev server with
+  `root` = repo root, serving the real entrypoints at
+  `/src/client/game.html` (also `/` and `/game.html`) and `/src/client/splash.html`.
+  The app's own `vite.config.ts` and `devvit.json` (used by `npm run build` /
+  `devvit upload`) are untouched.
+- `dev/local-api-plugin.mjs` serves the real Hono routes from
+  `src/server/routes/api.ts` on the same origin under `/api/*`, loading them via
+  Vite's SSR pipeline on each request — edits under `src/server` apply without a
+  restart.
+- `dev/shims/` replaces only `@devvit/web/server` (`context`, `redis`),
+  `@devvit/redis` and `@devvit/web/client` with local stand-ins. Game logic,
+  registries and systems are the real ones.
+- Quirks: the preview is a single fixed dev player/post
+  (`t2_stankville_dev` / `t3_stankville_dev`), and state lives in an in-memory
+  map, so it resets when the container restarts. Menu items, forms, triggers and
+  anything else needing the Reddit API are not reachable from the preview.
+- Verify a change by loading `/` and playing through EXPLORE → SMASH; health is
+  `GET /api/init` and it must return 200 JSON.
+
+Pre-existing failures unrelated to the preview: `npm run lint` reports
+`no-explicit-any` errors and `npm run type-check` reports errors in
+`src/client/game.tsx` (unused `pulse`, implicit `any[]`).

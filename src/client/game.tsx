@@ -79,7 +79,10 @@ export const App = () => {
       const data = await res.json();
       if (data.encounter?.type === 'COMBAT') {
         const names: Record<string, string> = { sewer_rat: '🐀 Sewer Rat', trash_goblin: '👹 Trash Goblin' };
-        setState(p => ({ ...p, screen: 'combat', sessionId: 'session_' + Date.now(), enemyName: names[data.encounter.enemyId] || 'Enemy', enemyHp: 50, enemyMaxHp: 50 }));
+        const startRes = await fetch('/api/combat/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enemyId: data.encounter.enemyId }) });
+        const started = await startRes.json();
+        const enemy = started.session?.enemy;
+        setState(p => ({ ...p, screen: 'combat', sessionId: started.session?.id, enemyName: names[data.encounter.enemyId] || enemy?.name || 'Enemy', enemyHp: enemy?.currentHealth ?? 50, enemyMaxHp: enemy?.health ?? 50 }));
         triggerShake();
         burst(window.innerWidth / 2, window.innerHeight / 2, 20);
       }
@@ -102,7 +105,7 @@ export const App = () => {
       } else if (data.type === 'combat_defeat') {
         setState(p => ({ ...p, screen: 'defeat' }));
       } else {
-        setState(p => ({ ...p, enemyHp: Math.max(0, (p.enemyHp ?? 50) - (data.damage || 15)), hp: Math.max(0, data.playerHealth ?? p.hp) }));
+        setState(p => ({ ...p, enemyHp: Math.max(0, data.enemyHealth ?? (p.enemyHp ?? 50) - (data.playerDamage || 15)), hp: Math.max(0, data.playerHealth ?? p.hp) }));
       }
     } catch (e) { console.error(e); }
   }, [state.sessionId, burst]);
